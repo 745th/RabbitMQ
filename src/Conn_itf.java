@@ -7,5 +7,5 @@ import java.util.concurrent.TimeoutException;
 public interface Conn_itf {
 
     void init_connection() throws IOException, TimeoutException;
-    void Work(long deliveryTag, Channel channel, String message) throws IOException;
+    void Work(String consumer,long deliveryTag, String message) throws IOException,TimeoutException;
 }
