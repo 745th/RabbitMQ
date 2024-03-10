@@ -2,6 +2,9 @@ import com.rabbitmq.client.*;
 
 import java.io.IOException;
 import java.io.PrintStream;
+import java.net.URISyntaxException;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
 import java.sql.Time;
 import java.util.HashMap;
 import java.util.Map;
@@ -16,12 +19,14 @@ public class Conn implements Conn_itf{
     Channel channelPublish;
     Channel channelListen;
     private long ID;
+    private long sID;
     private boolean p;
 
     private DefaultConsumer Handler;
 
     Conn(long t_id)
     {
+        sID=-1;
         ID=t_id;
         state=State.IDLE;
         QUEUE_LISTENING = "B";
@@ -31,7 +36,13 @@ public class Conn implements Conn_itf{
     @Override
     public void init_connection()  throws IOException, TimeoutException{
         factory = new ConnectionFactory();
-        factory.setHost("localhost");
+        try {
+            factory.setUri("amqps://bzvwxdcj:jRt0uZTPEM42fwDXp3f9mqBMeBYHkjPi@rattlesnake.rmq.cloudamqp.com/bzvwxdcj");
+            factory.setPort(5671);
+        }catch (URISyntaxException | NoSuchAlgorithmException| KeyManagementException e)
+        {
+            System.out.println(e);
+        }
         Connection connection = factory.newConnection();
         channelPublish = connection.createChannel();
         channelListen = connection.createChannel();
@@ -39,6 +50,7 @@ public class Conn implements Conn_itf{
         channelListen.queueDeclare(QUEUE_LISTENING, false, false, false, null);
         QUEUE_LISTENING="A";
         String message = "START " + ID;
+        state=State.WAITING;
         channelListen.basicQos(1);
         System.out.println(message);
         /*DeliverCallback deliverCallback = (consumerTag, delivery) -> {
@@ -74,67 +86,100 @@ public class Conn implements Conn_itf{
         String[] command = message.split(" ");
         message = command[0];
         long sID = Long.parseLong(command[1]);
-        if(sID != ID)
+        if(sID != ID && (sID == this.sID || this.sID == -1))
         {
             System.out.println("Message consume : "+message);
-            switch(message)
-            {
+            switch(message) {
                 case "START":
-                    if(state != State.STARTED)
-                    {
-                        if(sID<ID)
-                        {
+                    if (state == State.WAITING) {
+                        if (sID < ID) {
                             //it send to A and receive from B
-                            message="FIRST "+ID;
-                            QUEUE_PUBLISH="A";
-                            QUEUE_LISTENING="B";
+                            System.out.println("Work");
+                            //i am the younger, i'm waiting a ping
+                            message = "FIRST " + ID;
+                            QUEUE_PUBLISH = "A";
+                            QUEUE_LISTENING = "B";
+
                             channelListen.basicCancel(consumer);
                             channelListen.basicConsume(QUEUE_LISTENING, false, Handler);
-                        }
-                        else
-                        {
+                        } else {
                             //it send to B and receive from A
-                            message="SECOND "+ID;
-                            QUEUE_PUBLISH="B";
-                            QUEUE_LISTENING="A";
+
+                            //i am not the younger, i will send a ping
+                            message = "SECOND " + ID;
+                            QUEUE_PUBLISH = "B";
+                            QUEUE_LISTENING = "A";
                             channelListen.basicCancel(consumer);
                             channelListen.basicConsume(QUEUE_LISTENING, false, Handler);
                         }
-                        state=State.WAITING;
+                        state = State.STARTED;
+                        this.sID = sID;
+
                         channelPublish.basicPublish("", "A", null, message.getBytes());
                         channelPublish.basicPublish("", "B", null, message.getBytes());
+                        if (sID > ID)
+                            channelPublish.basicPublish("PING "+ID, QUEUE_PUBLISH, null, message.getBytes());
                     }
                     break;
                 case "SECOND":
-                    state=State.STARTED;
-                    QUEUE_LISTENING="B";
-                    channelListen.basicCancel(consumer);
-                    channelListen.basicConsume(QUEUE_LISTENING, false, Handler);
-                    QUEUE_PUBLISH="A";
-                case "FIRST":
-                    state=State.STARTED;
-                    QUEUE_LISTENING="A";
-                    channelListen.basicCancel(consumer);
-                    channelListen.basicConsume(QUEUE_LISTENING, false, Handler);
-                    QUEUE_PUBLISH="B";
+                    if(state != State.STARTED) {
+                        System.out.println("Work");
+                        state = State.STARTED;
+                        QUEUE_LISTENING = "B";
+                        channelListen.basicCancel(consumer);
+                        channelListen.basicConsume(QUEUE_LISTENING, false, Handler);
+                        QUEUE_PUBLISH = "A";
+                    }
+                    break;
 
                 case "PING":
-                    message="PONG "+ID;
-                    channelPublish.basicPublish("", QUEUE_PUBLISH, null, message.getBytes());
+                    if(state == State.STARTED) {
+                        message = "PONG " + ID;
+                        channelPublish.basicPublish("", QUEUE_PUBLISH, null, message.getBytes());
+                        try {
+                            Thread.sleep(1000);
+                        } catch (InterruptedException e) {
+                            System.out.println(e);
+                        }
+                    }
+                    else
+                    {
+                        System.out.println("it's an older ping");
+                    }
                     break;
+                case "FIRST":
+                    if(state != State.STARTED) {
+                        System.out.println("Work");
+                        state = State.STARTED;
+                        QUEUE_LISTENING = "A";
+                        channelListen.basicCancel(consumer);
+                        channelListen.basicConsume(QUEUE_LISTENING, false, Handler);
+                        QUEUE_PUBLISH = "B";
+                    }
                 case "PONG":
-                    message="PING "+ID;
-                    channelPublish.basicPublish("", QUEUE_PUBLISH, null, message.getBytes());
-                    break;
+                    if(state == State.STARTED) {
+                        message = "PING " + ID;
+                        channelPublish.basicPublish("", QUEUE_PUBLISH, null, message.getBytes());
+                        try {
+                            Thread.sleep(1000);
+                        } catch (InterruptedException e) {
+                            System.out.println(e);
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        System.out.println("it's an older pong");
+                    }
             }
-
             channelListen.basicAck(deliveryTag, false);
         }
         else
         {
+            System.out.println("Message ignored : "+message +" State:" +state);
             switch(state)
             {
-                case State.IDLE:
+                case State.WAITING:
                     if(!(QUEUE_LISTENING.equals("B"))) {
                         //only if it's alone in the channel A
                         //accept the first start
@@ -146,8 +191,8 @@ public class Conn implements Conn_itf{
                     }
                     break;
                 case State.STARTED:
-                    System.out.println("Message ignored : " + message);
-                    channelListen.basicReject(deliveryTag, true);
+                    System.out.println("Message ignored S: " + message);
+                    channelListen.basicAck(deliveryTag, false);
                     break;
 
                 default:
