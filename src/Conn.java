@@ -38,7 +38,6 @@ public class Conn implements Conn_itf{
         factory = new ConnectionFactory();
         try {
             factory.setUri("amqps://bzvwxdcj:jRt0uZTPEM42fwDXp3f9mqBMeBYHkjPi@rattlesnake.rmq.cloudamqp.com/bzvwxdcj");
-            factory.setPort(5671);
         }catch (URISyntaxException | NoSuchAlgorithmException| KeyManagementException e)
         {
             System.out.println(e);
@@ -136,14 +135,7 @@ public class Conn implements Conn_itf{
                     if(state == State.STARTED) {
                         message = "PONG " + ID;
                         channelPublish.basicPublish("", QUEUE_PUBLISH, null, message.getBytes());
-                        try {
-                            Thread.sleep(1000);
-                        } catch (InterruptedException e) {
-                            System.out.println(e);
-                        }
-                    }
-                    else
-                    {
+                    }else{
                         System.out.println("it's an older ping");
                     }
                     break;
@@ -160,15 +152,7 @@ public class Conn implements Conn_itf{
                     if(state == State.STARTED) {
                         message = "PING " + ID;
                         channelPublish.basicPublish("", QUEUE_PUBLISH, null, message.getBytes());
-                        try {
-                            Thread.sleep(1000);
-                        } catch (InterruptedException e) {
-                            System.out.println(e);
-                            break;
-                        }
-                    }
-                    else
-                    {
+                    }else{
                         System.out.println("it's an older pong");
                     }
             }
@@ -179,7 +163,7 @@ public class Conn implements Conn_itf{
             System.out.println("Message ignored : "+message +" State:" +state);
             switch(state)
             {
-                case State.WAITING:
+                case WAITING:
                     if(!(QUEUE_LISTENING.equals("B"))) {
                         //only if it's alone in the channel A
                         //accept the first start
@@ -190,7 +174,7 @@ public class Conn implements Conn_itf{
                         channelListen.basicAck(deliveryTag, false);
                     }
                     break;
-                case State.STARTED:
+                case STARTED:
                     System.out.println("Message ignored S: " + message);
                     channelListen.basicAck(deliveryTag, false);
                     break;
