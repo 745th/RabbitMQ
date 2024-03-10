@@ -139,6 +139,7 @@ public class Conn implements Conn_itf{
                         System.out.println("it's an older ping");
                     }
                     break;
+
                 case "FIRST":
                     if(state != State.STARTED) {
                         System.out.println("Work");
